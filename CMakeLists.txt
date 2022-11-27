@@ -7,7 +7,10 @@ set(SRC_DIR ${ROOT_DIR}/src/)
 set(SRCS
 	${SRC_DIR}/main.c
 	${SRC_DIR}/main_frame.c
+	${SRC_DIR}/table_template_frame.c
 )
+
+set(CMAKE_C_FLAGS "-O0 -ggdb")
 
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(GTK3 REQUIRED gtk+-3.0)
