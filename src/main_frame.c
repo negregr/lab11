@@ -1,4 +1,5 @@
 #include "main_frame.h"
+#include "login_frame.h"
 #include "table_template_frame.h"
 #include <gtk/gtk.h>
 #include <string.h>
@@ -26,6 +27,13 @@ static void table_button_create(GtkWidget *widget, gpointer user_data)
 	gtk_window_set_transient_for(GTK_WINDOW(window), GTK_WINDOW(main_window));
 	g_print("Открыта таблица \"%s\"\n", table_name->str);
 	gtk_widget_show_all(window);
+}
+
+static void change_user_button_clicked(GtkWidget *widget, gpointer user_data)
+{
+	GtkWidget* login_frame = create_login_frame(GTK_WINDOW(main_window));
+	gtk_window_set_transient_for(GTK_WINDOW(login_frame), GTK_WINDOW(main_window));
+	gtk_window_present(GTK_WINDOW(login_frame));
 }
 
 static void destroy_app(GtkWidget *widget, gpointer user_data)
@@ -69,6 +77,8 @@ GtkWidget *create_main_window(GtkApplication *app)
 
 	button = gtk_builder_get_object(builder, "button8");
 	g_signal_connect(button, "clicked", G_CALLBACK(destroy_app), (gpointer) app);
+	button = gtk_builder_get_object(builder, "button7");
+	g_signal_connect(button, "clicked", G_CALLBACK(change_user_button_clicked), NULL);
 	g_signal_connect(main_window, "destroy", G_CALLBACK(destroy_app), (gpointer) app);
 
 	return GTK_WIDGET(window);

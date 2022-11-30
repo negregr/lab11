@@ -1,4 +1,5 @@
 #ifndef MAIN_FRAME_H
+#define MAIN_FRAME_H
 
 #include <gtk/gtk.h>
 

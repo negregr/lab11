@@ -1,4 +1,5 @@
 #ifndef TABLE_TEMPLATE_H
+#define TABLE_TEMPLATE_H
 
 #include <gtk/gtk.h>
 

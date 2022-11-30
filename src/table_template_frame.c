@@ -1,5 +1,4 @@
 #include "table_template_frame.h"
-#include <stdint.h>
 
 static void destroy_table_template(GtkWidget *widget, gpointer data)
 {
