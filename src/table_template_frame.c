@@ -12,6 +12,7 @@ static char query[2048];
 
 static GtkListStore *gl_store = NULL;
 static int gl_column_count = 0;
+static int gl_row_count = 0;
 static GtkTreeModel *gl_model = NULL;
 static GtkTreeIter gl_iter;
 static char is_clicked = 0;
@@ -45,9 +46,20 @@ static void cell_clicked(GtkTreeView *self, GtkTreePath *path, GtkTreeViewColumn
 
 static void delete_row(GtkWidget *widget, gpointer user_data)
 {
-	GtkTreeIter iter;
-	if (is_clicked) {
-		gtk_list_store_remove(GTK_LIST_STORE(gl_model), &gl_iter);
+	gchar *column_num;
+	char tmp[5];
+	if (gl_row_count > 0) {
+		if (is_clicked) {
+			column_num = gtk_tree_model_get_string_from_iter(gl_model, &gl_iter);
+			gtk_list_store_remove(GTK_LIST_STORE(gl_model), &gl_iter);
+			if (atoi(column_num) == gl_row_count - 1) {
+				sprintf(tmp, "%d", atoi(column_num) - 1);
+				if (gl_row_count != 1) {
+					gtk_tree_model_get_iter_from_string(gl_model, &gl_iter, tmp);
+				}
+			}
+			gl_row_count -= 1;
+		}
 	}
 }
 
@@ -75,11 +87,59 @@ static void add_new_row(GtkWidget *widget, gpointer user_data)
 
 	gtk_list_store_insert_with_valuesv(gl_store, &iter, -1, columns,
 		g_value, gl_column_count);
+	gl_row_count += 1;
 }
 
 static void send_new_data(GtkWidget *widget, gpointer user_data)
 {
+	GtkTreeIter iter;
+	gchar *tmp;
+	GValue *g_value;
+	char buff[2];
+	gchar *table_name = (gchar *) user_data;
+	char tmp_value[512];
 
+	GtkTreePath *path;
+
+	sprintf(query, "INSERT INTO %s VALUES ", table_name);
+	GString *query_values = g_string_new(query);
+
+	for (int i = 0; i < gl_row_count; i++) {
+		sprintf(buff, "%d", i);
+		path = gtk_tree_path_new_from_string(buff);
+		gtk_tree_model_get_iter(gl_model, &iter, path);
+		for (int j = 0; j < gl_column_count; j++) {
+			gtk_tree_model_get(gl_model, &iter, j, &tmp, -1);
+			if (j == 0) {
+				g_string_append(query_values, "(");
+			}
+			if (j == gl_column_count - 1) {
+				if (i == gl_row_count - 1) {
+					sprintf(tmp_value, "\'%s\');", tmp);
+				} else {
+					sprintf(tmp_value, "\'%s\'),", tmp);
+				}
+			} else {
+				sprintf(tmp_value, "\'%s\', ", tmp);
+			}
+			g_string_append(query_values, tmp_value);
+		}
+	}
+	sprintf(query, "DELETE FROM %s;", table_name);
+	PGresult *query_result = send_query_to_server(query);
+	char *error_message = PQresultErrorMessage(query_result);
+	if (error_message != NULL && strlen(error_message) > 0) {
+		g_print("%s\n", error_message);
+		free(error_message);
+	}
+
+	query_result = send_query_to_server(query_values->str);
+	error_message = PQresultErrorMessage(query_result);
+	if (error_message != NULL && strlen(error_message) > 0) {
+		g_print("%s\n", error_message);
+		free(error_message);
+	}
+	g_string_free(query_values, 1);
 }
 
 GtkWidget *create_new_template(const GString *template_name, void *data)
@@ -97,7 +157,14 @@ GtkWidget *create_new_template(const GString *template_name, void *data)
 	GObject *window = gtk_builder_get_object(builder, "table_template");
 	GObject *label = gtk_builder_get_object(builder, "table_name");
 	GObject *table_view = gtk_builder_get_object(builder, "table_view");
+	GObject *column_list = gtk_builder_get_object(builder, "column_list");
+
 	GObject *button = gtk_builder_get_object(builder, "button_add");
+	g_signal_connect(button, "clicked", G_CALLBACK(add_new_row), NULL);
+	button = gtk_builder_get_object(builder, "button_delete");
+	g_signal_connect(button, "clicked", G_CALLBACK(delete_row), NULL);
+	button = gtk_builder_get_object(builder, "button_change");
+	g_signal_connect(button, "clicked", G_CALLBACK(send_new_data), (gpointer) template_name->str);
 	
 	GString *result_str = g_string_new("Таблица \"");
 	g_string_append(result_str, template_name->str);
@@ -111,6 +178,7 @@ GtkWidget *create_new_template(const GString *template_name, void *data)
 	PGresult *query_result = send_query_to_server(query);
 	
 	int row_count = PQntuples(query_result);
+	gl_row_count = row_count;
 	int column_count = PQnfields(query_result);
 	int r_c_count[2] = {row_count, column_count};
 
@@ -142,8 +210,6 @@ GtkWidget *create_new_template(const GString *template_name, void *data)
 	
 	GtkWidget *tree_view = gtk_tree_view_new();
 
-	g_signal_connect(button, "clicked", G_CALLBACK(add_new_row), NULL);
-	
 	gtk_widget_set_focus_on_click(tree_view, 1);
 
 	for (unsigned int i = 0; i < (unsigned int) column_count; i++) {
@@ -158,7 +224,9 @@ GtkWidget *create_new_template(const GString *template_name, void *data)
 			"text", i,
 			NULL
 		);
+		gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(column_list), NULL, PQfname(query_result, i));
 	}
+	gtk_combo_box_set_active(GTK_COMBO_BOX(column_list), 0);
 
 	gtk_tree_view_set_model(GTK_TREE_VIEW(tree_view), GTK_TREE_MODEL(store));
 	gtk_tree_view_set_grid_lines(GTK_TREE_VIEW(tree_view), 3);
@@ -168,11 +236,6 @@ GtkWidget *create_new_template(const GString *template_name, void *data)
 	
 	gl_store = store;
 	gl_column_count = column_count;
-
-	button = gtk_builder_get_object(builder, "button_delete");
-	g_signal_connect(button, "clicked", G_CALLBACK(delete_row), NULL);
-	button = gtk_builder_get_object(builder, "button_change");
-	g_signal_connect(button, "clicked", G_CALLBACK(send_new_data), NULL);
 
 	return GTK_WIDGET(window);
 }
