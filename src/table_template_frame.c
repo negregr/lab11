@@ -11,6 +11,15 @@ static int gl_row_count = 0;
 static GtkTreeModel *gl_model = NULL;
 static GtkTreeIter gl_iter;
 static char is_clicked = 0;
+static GtkWidget *gl_tree_view = NULL;
+
+typedef struct {
+	GtkBuilder *builder;
+	GtkWidget *view;
+	const gchar *table_name;
+} find_text_callback;
+
+find_text_callback gl_ft_cb;
 
 static void destroy_table_template(GtkWidget *widget, gpointer data)
 {
@@ -136,63 +145,9 @@ static void send_new_data(GtkWidget *widget, gpointer user_data)
 	g_string_free(query_values, 1);
 }
 
-static void find_data(GtkWidget *button, gpointer user_data)
+static void create_table(const gchar *query_to_create, GtkWidget *tree_view)
 {
-	GtkBuilder *builder = (GtkBuilder *) user_data;
-
-	GObject *column_list = gtk_builder_get_object(builder, "column_list");
-	GObject *text_find = gtk_builder_get_object(builder, "text_find");
-
-
-}
-
-static void column_clicked(GtkTreeViewColumn *widget, gpointer user_data)
-{
-	guint index = GPOINTER_TO_UINT(user_data);
-	
-	GtkSortType sort_type = gtk_tree_view_column_get_sort_order(widget);
-	
-	sort_type = (sort_type == GTK_SORT_ASCENDING) ? GTK_SORT_DESCENDING : GTK_SORT_ASCENDING;
-
-	gtk_tree_view_column_set_sort_column_id(widget, index);
-}
-
-GtkWidget *create_new_template(const GString *template_name, void *data)
-{
-	memset(&gl_iter, 0, sizeof(gl_iter));
-	GtkBuilder *builder = gtk_builder_new();
-	GError *error = NULL;
-	
-	if (gtk_builder_add_from_file(builder, UI_DIR "table_template.ui", &error) == 0) {
-		g_printerr("Error loading table_template.ui file: %s\n", error->message);
-		g_clear_error(&error);
-		return NULL;
-	}
-
-	GObject *window = gtk_builder_get_object(builder, "table_template");
-	GObject *label = gtk_builder_get_object(builder, "table_name");
-	GObject *table_view = gtk_builder_get_object(builder, "table_view");
-	GObject *column_list = gtk_builder_get_object(builder, "column_list");
-
-	GObject *button = gtk_builder_get_object(builder, "button_add");
-	g_signal_connect(button, "clicked", G_CALLBACK(add_new_row), NULL);
-	button = gtk_builder_get_object(builder, "button_delete");
-	g_signal_connect(button, "clicked", G_CALLBACK(delete_row), NULL);
-	button = gtk_builder_get_object(builder, "button_change");
-	g_signal_connect(button, "clicked", G_CALLBACK(send_new_data), (gpointer) template_name->str);
-	button = gtk_builder_get_object(builder, "button_find");
-	g_signal_connect(button, "clicked", G_CALLBACK(find_data), NULL);
-	
-	GString *result_str = g_string_new("Таблица \"");
-	g_string_append(result_str, template_name->str);
-	g_string_append(result_str, "\"");
-	gtk_label_set_label(GTK_LABEL(label), result_str->str);
-
-	g_signal_connect(window, "destroy", G_CALLBACK(destroy_table_template), result_str->str);
-
-	sprintf(query, "SELECT * FROM %s;", template_name->str);
-
-	PGresult *query_result = send_query_to_server(query);
+	PGresult *query_result = send_query_to_server(query_to_create);
 	
 	int row_count = PQntuples(query_result);
 	int column_count = PQnfields(query_result);
@@ -225,8 +180,6 @@ GtkWidget *create_new_template(const GString *template_name, void *data)
 		gtk_list_store_insert_with_valuesv(store, &iter, -1, columns, g_value, column_count);
 	}
 	
-	GtkWidget *tree_view = gtk_tree_view_new();
-
 	gtk_widget_set_focus_on_click(tree_view, 1);
 	char buff_id[10];
 	GtkTreeViewColumn *column;
@@ -244,21 +197,101 @@ GtkWidget *create_new_template(const GString *template_name, void *data)
 		gtk_tree_view_column_set_clickable(column, 1);
 		gtk_tree_view_insert_column(GTK_TREE_VIEW(tree_view), column, -1);
 		gtk_tree_view_column_set_sort_order(column, GTK_SORT_ASCENDING);
-
-		g_signal_connect(column, "clicked", G_CALLBACK(column_clicked), GUINT_TO_POINTER(i));
+		gtk_tree_view_column_set_sort_column_id(column, i);
 
 		sprintf(buff_id, "%d", i);
-		gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(column_list), buff_id, PQfname(query_result, i));
+
 	}
-	gtk_combo_box_set_active(GTK_COMBO_BOX(column_list), 0);
 
 	gtk_tree_view_set_model(GTK_TREE_VIEW(tree_view), GTK_TREE_MODEL(sortable));
 	gtk_tree_view_set_grid_lines(GTK_TREE_VIEW(tree_view), 3);
 	gtk_tree_view_set_activate_on_single_click(GTK_TREE_VIEW(tree_view), 1);
-	gtk_container_add(GTK_CONTAINER(table_view), GTK_WIDGET(tree_view));
+	gtk_tree_view_set_enable_search(GTK_TREE_VIEW(tree_view), 1);
+
 	gl_model = GTK_TREE_MODEL(sortable);
 	
 	gl_store = store;
+}
+
+static void find_data(GtkWidget *button, gpointer user_data)
+{
+	find_text_callback *cb = (find_text_callback *) user_data;
+	GtkBuilder *builder = (GtkBuilder *) cb->builder;
+
+	GObject *column_list = gtk_builder_get_object(builder, "column_list");
+	GObject *text_find = gtk_builder_get_object(builder, "text_find");
+
+	const gchar *text = gtk_entry_get_text(GTK_ENTRY(text_find));
+	const gchar *text2 = gtk_combo_box_text_get_active_text(GTK_COMBO_BOX_TEXT(column_list));
+
+	char query[1024];
+	sprintf(query, "SELECT * FROM %s WHERE %s=\'%s\';", cb->table_name, text2, text);
+	
+	GtkTreeViewColumn *column;
+	for (int i = 0; i < gl_column_count; i++) {
+		column = gtk_tree_view_get_column(GTK_TREE_VIEW(cb->view), 0);
+		gtk_tree_view_remove_column(GTK_TREE_VIEW(cb->view), column);
+	}
+
+	create_table(query, cb->view);
+}
+
+
+GtkWidget *create_new_template(const GString *template_name, void *data)
+{
+	memset(&gl_iter, 0, sizeof(gl_iter));
+	GtkBuilder *builder = gtk_builder_new();
+	GError *error = NULL;
+	
+	if (gtk_builder_add_from_file(builder, UI_DIR "table_template.ui", &error) == 0) {
+		g_printerr("Error loading table_template.ui file: %s\n", error->message);
+		g_clear_error(&error);
+		return NULL;
+	}
+
+	GObject *window = gtk_builder_get_object(builder, "table_template");
+	GObject *label = gtk_builder_get_object(builder, "table_name");
+	GObject *table_view = gtk_builder_get_object(builder, "table_view");
+	GObject *column_list = gtk_builder_get_object(builder, "column_list");
+
+	GObject *button = gtk_builder_get_object(builder, "button_add");
+	g_signal_connect(button, "clicked", G_CALLBACK(add_new_row), NULL);
+	button = gtk_builder_get_object(builder, "button_delete");
+	g_signal_connect(button, "clicked", G_CALLBACK(delete_row), NULL);
+	button = gtk_builder_get_object(builder, "button_change");
+	g_signal_connect(button, "clicked", G_CALLBACK(send_new_data), (gpointer) template_name->str);
+	button = gtk_builder_get_object(builder, "button_find");
+	
+	GString *result_str = g_string_new("Таблица \"");
+	g_string_append(result_str, template_name->str);
+	g_string_append(result_str, "\"");
+	gtk_label_set_label(GTK_LABEL(label), result_str->str);
+
+	g_signal_connect(window, "destroy", G_CALLBACK(destroy_table_template), result_str->str);
+	
+	sprintf(query, "SELECT * FROM %s;", template_name->str);
+	PGresult *query_result = send_query_to_server(query);
+	int column_count = PQnfields(query_result);
+	char buff[10];
+
+	for (int i = 0; i < column_count; i++) {
+		sprintf(buff, "%d", i);
+		gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(column_list), buff, PQfname(query_result, i));
+	}
+	gtk_combo_box_set_active_id(GTK_COMBO_BOX(column_list), "0");
+
+	GtkWidget *tree_view = gtk_tree_view_new();
+	gl_tree_view = tree_view;
+
+	create_table(query, tree_view);
+	
+	gl_ft_cb.builder = builder;
+	gl_ft_cb.table_name = template_name->str;
+	gl_ft_cb.view = tree_view;
+
+	g_signal_connect(button, "clicked", G_CALLBACK(find_data), &gl_ft_cb);
+
+	gtk_container_add(GTK_CONTAINER(table_view), GTK_WIDGET(tree_view));
 
 	return GTK_WIDGET(window);
 }
