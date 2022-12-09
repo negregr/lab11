@@ -3,11 +3,6 @@
 #include <libpq-fe.h>
 #include <string.h>
 
-typedef struct {
-	int r_c_count[2];
-	GtkListStore *store;
-} callback_data;
-
 static char query[2048];
 
 static GtkListStore *gl_store = NULL;
@@ -65,7 +60,6 @@ static void delete_row(GtkWidget *widget, gpointer user_data)
 
 static void add_new_row(GtkWidget *widget, gpointer user_data)
 {
-	callback_data *data = (callback_data *) user_data;
 	GtkTreeIter iter;
 	
 	GValue g_value[1000];
@@ -142,6 +136,16 @@ static void send_new_data(GtkWidget *widget, gpointer user_data)
 	g_string_free(query_values, 1);
 }
 
+static void find_data(GtkWidget *button, gpointer user_data)
+{
+	GtkBuilder *builder = (GtkBuilder *) user_data;
+
+	GObject *column_list = gtk_builder_get_object(builder, "column_list");
+	GObject *text_find = gtk_builder_get_object(builder, "text_find");
+
+
+}
+
 GtkWidget *create_new_template(const GString *template_name, void *data)
 {
 	memset(&gl_iter, 0, sizeof(gl_iter));
@@ -165,6 +169,8 @@ GtkWidget *create_new_template(const GString *template_name, void *data)
 	g_signal_connect(button, "clicked", G_CALLBACK(delete_row), NULL);
 	button = gtk_builder_get_object(builder, "button_change");
 	g_signal_connect(button, "clicked", G_CALLBACK(send_new_data), (gpointer) template_name->str);
+	button = gtk_builder_get_object(builder, "button_find");
+	g_signal_connect(button, "clicked", G_CALLBACK(find_data), NULL);
 	
 	GString *result_str = g_string_new("Таблица \"");
 	g_string_append(result_str, template_name->str);
@@ -178,9 +184,9 @@ GtkWidget *create_new_template(const GString *template_name, void *data)
 	PGresult *query_result = send_query_to_server(query);
 	
 	int row_count = PQntuples(query_result);
-	gl_row_count = row_count;
 	int column_count = PQnfields(query_result);
-	int r_c_count[2] = {row_count, column_count};
+	gl_row_count = row_count;
+	gl_column_count = column_count;
 
 	GType g_type[100];
 	GValue g_value[1000];
@@ -211,6 +217,7 @@ GtkWidget *create_new_template(const GString *template_name, void *data)
 	GtkWidget *tree_view = gtk_tree_view_new();
 
 	gtk_widget_set_focus_on_click(tree_view, 1);
+	char buff_id[10];
 
 	for (unsigned int i = 0; i < (unsigned int) column_count; i++) {
 		renderer = gtk_cell_renderer_text_new();
@@ -224,7 +231,8 @@ GtkWidget *create_new_template(const GString *template_name, void *data)
 			"text", i,
 			NULL
 		);
-		gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(column_list), NULL, PQfname(query_result, i));
+		sprintf(buff_id, "%d", i);
+		gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(column_list), buff_id, PQfname(query_result, i));
 	}
 	gtk_combo_box_set_active(GTK_COMBO_BOX(column_list), 0);
 
@@ -235,7 +243,6 @@ GtkWidget *create_new_template(const GString *template_name, void *data)
 	gl_model = GTK_TREE_MODEL(store);
 	
 	gl_store = store;
-	gl_column_count = column_count;
 
 	return GTK_WIDGET(window);
 }
