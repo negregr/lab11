@@ -146,6 +146,17 @@ static void find_data(GtkWidget *button, gpointer user_data)
 
 }
 
+static void column_clicked(GtkTreeViewColumn *widget, gpointer user_data)
+{
+	guint index = GPOINTER_TO_UINT(user_data);
+	
+	GtkSortType sort_type = gtk_tree_view_column_get_sort_order(widget);
+	
+	sort_type = (sort_type == GTK_SORT_ASCENDING) ? GTK_SORT_DESCENDING : GTK_SORT_ASCENDING;
+
+	gtk_tree_view_column_set_sort_column_id(widget, index);
+}
+
 GtkWidget *create_new_template(const GString *template_name, void *data)
 {
 	memset(&gl_iter, 0, sizeof(gl_iter));
@@ -218,6 +229,8 @@ GtkWidget *create_new_template(const GString *template_name, void *data)
 
 	gtk_widget_set_focus_on_click(tree_view, 1);
 	char buff_id[10];
+	GtkTreeViewColumn *column;
+	GtkTreeSortable *sortable = GTK_TREE_SORTABLE(store);
 
 	for (unsigned int i = 0; i < (unsigned int) column_count; i++) {
 		renderer = gtk_cell_renderer_text_new();
@@ -225,22 +238,25 @@ GtkWidget *create_new_template(const GString *template_name, void *data)
 		g_object_set_data(G_OBJECT(renderer), "my_column_num", GUINT_TO_POINTER(i));
 		g_signal_connect(renderer, "edited", G_CALLBACK(cell_edit_callback), GTK_TREE_MODEL(store));
 		g_signal_connect(GTK_TREE_VIEW(tree_view), "row-activated", G_CALLBACK(cell_clicked), NULL);
-		gtk_tree_view_insert_column_with_attributes(GTK_TREE_VIEW(tree_view),
-			-1,
-		   	PQfname(query_result, i), renderer,
-			"text", i,
-			NULL
-		);
+		
+		column = gtk_tree_view_column_new_with_attributes(PQfname(query_result, i), renderer,
+				"text", i, NULL);
+		gtk_tree_view_column_set_clickable(column, 1);
+		gtk_tree_view_insert_column(GTK_TREE_VIEW(tree_view), column, -1);
+		gtk_tree_view_column_set_sort_order(column, GTK_SORT_ASCENDING);
+
+		g_signal_connect(column, "clicked", G_CALLBACK(column_clicked), GUINT_TO_POINTER(i));
+
 		sprintf(buff_id, "%d", i);
 		gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(column_list), buff_id, PQfname(query_result, i));
 	}
 	gtk_combo_box_set_active(GTK_COMBO_BOX(column_list), 0);
 
-	gtk_tree_view_set_model(GTK_TREE_VIEW(tree_view), GTK_TREE_MODEL(store));
+	gtk_tree_view_set_model(GTK_TREE_VIEW(tree_view), GTK_TREE_MODEL(sortable));
 	gtk_tree_view_set_grid_lines(GTK_TREE_VIEW(tree_view), 3);
 	gtk_tree_view_set_activate_on_single_click(GTK_TREE_VIEW(tree_view), 1);
 	gtk_container_add(GTK_CONTAINER(table_view), GTK_WIDGET(tree_view));
-	gl_model = GTK_TREE_MODEL(store);
+	gl_model = GTK_TREE_MODEL(sortable);
 	
 	gl_store = store;
 
