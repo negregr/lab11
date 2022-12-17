@@ -19,7 +19,13 @@ typedef struct {
 	const gchar *table_name;
 } find_text_callback;
 
+typedef struct {
+	GtkWidget *tree_view;
+	GtkTreeModel *model;
+} update_data_callback;
+
 find_text_callback gl_ft_cb;
+update_data_callback gl_update_data;
 
 static void destroy_table_template(GtkWidget *widget, gpointer data)
 {
@@ -234,8 +240,15 @@ static void find_data(GtkWidget *button, gpointer user_data)
 	}
 
 	create_table(query, cb->view);
+	gtk_entry_set_text(GTK_ENTRY(text_find), "");
 }
 
+static void update_data(GtkWidget *button, gpointer user_data)
+{
+	update_data_callback *cb = (update_data_callback *) user_data;
+	gtk_tree_view_set_model(GTK_TREE_VIEW(cb->tree_view), cb->model);
+	gl_model = cb->model;
+}
 
 GtkWidget *create_new_template(const GString *template_name, void *data)
 {
@@ -260,6 +273,8 @@ GtkWidget *create_new_template(const GString *template_name, void *data)
 	g_signal_connect(button, "clicked", G_CALLBACK(delete_row), NULL);
 	button = gtk_builder_get_object(builder, "button_change");
 	g_signal_connect(button, "clicked", G_CALLBACK(send_new_data), (gpointer) template_name->str);
+	button = gtk_builder_get_object(builder, "button_update");
+	g_signal_connect(button, "clicked", G_CALLBACK(update_data), &gl_update_data);
 	button = gtk_builder_get_object(builder, "button_find");
 	
 	GString *result_str = g_string_new("Таблица \"");
@@ -288,6 +303,9 @@ GtkWidget *create_new_template(const GString *template_name, void *data)
 	gl_ft_cb.builder = builder;
 	gl_ft_cb.table_name = template_name->str;
 	gl_ft_cb.view = tree_view;
+
+	gl_update_data.tree_view = tree_view;
+	gl_update_data.model = gtk_tree_view_get_model(GTK_TREE_VIEW(tree_view));
 
 	g_signal_connect(button, "clicked", G_CALLBACK(find_data), &gl_ft_cb);
 
